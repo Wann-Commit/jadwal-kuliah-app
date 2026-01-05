@@ -1,9 +1,4 @@
 package com.example.jadwalkuliahreminder
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.ImageButton
-import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
 // JadwalAdapter.kt
@@ -31,11 +26,11 @@ class JadwalAdapter(
 
     override fun onBindViewHolder(holder: JadwalViewHolder, position: Int) {
         val mataKuliah = jadwalList[position]
-        holder.tvNama.text = mataKuliah.nama
+        holder.tvNama.text = mataKuliah.nama_mk
         holder.tvHari.text = mataKuliah.hari
-        holder.tvJam.text = "${mataKuliah.jamMulai} - ${mataKuliah.jamSelesai}"
+        holder.tvJam.text = "${mataKuliah.jam_mulai} - ${mataKuliah.jam_selesai}"
         holder.tvRuangan.text = "Ruangan: ${mataKuliah.ruangan}"
-        holder.tvDosen.text = "Dosen: ${mataKuliah.dosen}"
+        holder.tvDosen.text = "Dosen: ${mataKuliah.nm_dosen}"
 
         holder.btnEdit.setOnClickListener { onEdit(mataKuliah) }
         holder.btnDelete.setOnClickListener { onDelete(mataKuliah) }

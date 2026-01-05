@@ -5,7 +5,6 @@ import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -15,19 +14,20 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.timepicker.MaterialTimePicker
 import com.google.android.material.timepicker.TimeFormat
-import java.util.*
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import java.util.Calendar
 
 data class MataKuliah(
-    val id: Int,
-    val nama: String,
+    val id_jadwal: Int,
+    val nama_mk: String,
     val hari: String,
-    val jamMulai: String,
-    val jamSelesai: String,
+    val jam_mulai: String,
+    val jam_selesai: String,
     val ruangan: String,
-    val dosen: String,
+    val nm_dosen: String,
     val reminder: Boolean = true
 )
 
@@ -37,6 +37,81 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bottomNavigation: BottomNavigationView
     private val jadwalList = mutableListOf<MataKuliah>()
     private var nextId = 1
+
+    private fun loadJadwalFromServer() {
+        lifecycleScope.launch {
+            try {
+                val response = RetrofitClient.apiService.getJadwal()
+                if (response.isSuccessful && response.body()?.success == true) {
+                    jadwalList.clear()
+                    response.body()?.data?.let { jadwalList.addAll(it) }
+                    adapter.notifyDataSetChanged()
+
+                    // Set reminder untuk semua jadwal
+                    jadwalList.forEach { setReminder(it) }
+                } else {
+                    Toast.makeText(this@MainActivity, "Gagal memuat data", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun addJadwalToServer(mataKuliah: MataKuliah) {
+        lifecycleScope.launch {
+            try {
+                val response = RetrofitClient.apiService.addJadwal(mataKuliah)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    Toast.makeText(this@MainActivity, "Jadwal berhasil ditambahkan", Toast.LENGTH_SHORT).show()
+                    loadJadwalFromServer() // Refresh data
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun updateJadwalToServer(mataKuliah: MataKuliah) {
+        lifecycleScope.launch {
+            try {
+                val response = RetrofitClient.apiService.updateJadwal(mataKuliah)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    Toast.makeText(this@MainActivity, "Jadwal berhasil diupdate", Toast.LENGTH_SHORT).show()
+                    loadJadwalFromServer()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun deleteJadwalFromServer(id_jadwal: Int) {
+        lifecycleScope.launch {
+            try {
+                android.util.Log.d("API_DEBUG", "Delete id_jadwal: $id_jadwal")
+
+                val response = RetrofitClient.apiService.deleteJadwal(mapOf("id_jadwal" to id_jadwal))
+
+                android.util.Log.d("API_DEBUG", "Delete response code: ${response.code()}")
+                android.util.Log.d("API_DEBUG", "Delete response body: ${response.body()}")
+
+                if (response.isSuccessful && response.body()?.success == true) {
+                    Toast.makeText(this@MainActivity, "Jadwal berhasil dihapus", Toast.LENGTH_SHORT).show()
+
+                    // Reload data dari server
+                    loadJadwalFromServer()
+                } else {
+                    val errorMsg = response.body()?.message ?: "Gagal menghapus jadwal"
+                    Toast.makeText(this@MainActivity, errorMsg, Toast.LENGTH_LONG).show()
+                    android.util.Log.e("API_ERROR", "Delete error: $errorMsg")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("API_ERROR", "Delete exception: ${e.message}", e)
+                Toast.makeText(this@MainActivity, "Error delete: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,9 +152,14 @@ class MainActivity : AppCompatActivity() {
         // Set default selected item
         bottomNavigation.selectedItemId = R.id.nav_jadwal
 
+        loadJadwalFromServer()
+
         // Contoh data
         addSampleData()
+
     }
+
+
 
     private fun showSettingsDialog() {
         val options = arrayOf(
@@ -163,15 +243,17 @@ class MainActivity : AppCompatActivity() {
             .setView(dialogView)
             .setPositiveButton("Simpan") { _, _ ->
                 val mataKuliah = MataKuliah(
-                    id = nextId++,
-                    nama = etNama.text.toString(),
+                    id_jadwal = 0,
+                    nama_mk = etNama.text.toString(),
                     hari = spinnerHari.selectedItem.toString(),
-                    jamMulai = etJamMulai.text.toString(),
-                    jamSelesai = etJamSelesai.text.toString(),
+                    jam_mulai = etJamMulai.text.toString(),
+                    jam_selesai = etJamSelesai.text.toString(),
                     ruangan = etRuangan.text.toString(),
-                    dosen = etDosen.text.toString(),
+                    nm_dosen = etDosen.text.toString(),
                     reminder = switchReminder.isChecked
                 )
+                addJadwalToServer(mataKuliah)
+
                 jadwalList.add(mataKuliah)
                 adapter.notifyItemInserted(jadwalList.size - 1)
 
@@ -211,11 +293,11 @@ class MainActivity : AppCompatActivity() {
         val switchReminder = dialogView.findViewById<android.widget.Switch>(R.id.switchReminder)
 
         // Isi data yang sudah ada
-        etNama.setText(mataKuliah.nama)
-        etJamMulai.setText(mataKuliah.jamMulai)
-        etJamSelesai.setText(mataKuliah.jamSelesai)
+        etNama.setText(mataKuliah.nama_mk)
+        etJamMulai.setText(mataKuliah.jam_mulai)
+        etJamSelesai.setText(mataKuliah.jam_selesai)
         etRuangan.setText(mataKuliah.ruangan)
-        etDosen.setText(mataKuliah.dosen)
+        etDosen.setText(mataKuliah.nm_dosen)
         switchReminder.isChecked = mataKuliah.reminder
 
         // Setup spinner
@@ -244,13 +326,13 @@ class MainActivity : AppCompatActivity() {
                 val position = jadwalList.indexOf(mataKuliah)
                 if (position != -1) {
                     val updatedMataKuliah = MataKuliah(
-                        id = mataKuliah.id,
-                        nama = etNama.text.toString(),
+                        id_jadwal = mataKuliah.id_jadwal,
+                        nama_mk = etNama.text.toString(),
                         hari = spinnerHari.selectedItem.toString(),
-                        jamMulai = etJamMulai.text.toString(),
-                        jamSelesai = etJamSelesai.text.toString(),
+                        jam_mulai = etJamMulai.text.toString(),
+                        jam_selesai = etJamSelesai.text.toString(),
                         ruangan = etRuangan.text.toString(),
-                        dosen = etDosen.text.toString(),
+                        nm_dosen = etDosen.text.toString(),
                         reminder = switchReminder.isChecked
                     )
 
@@ -261,6 +343,8 @@ class MainActivity : AppCompatActivity() {
                     if (updatedMataKuliah.reminder) {
                         setReminder(updatedMataKuliah)
                     }
+
+                    updateJadwalToServer(updatedMataKuliah)
 
                     Toast.makeText(this, "Jadwal berhasil diupdate", Toast.LENGTH_SHORT).show()
                 }
@@ -276,12 +360,13 @@ class MainActivity : AppCompatActivity() {
     private fun deleteJadwal(mataKuliah: MataKuliah) {
         AlertDialog.Builder(this)
             .setTitle("Hapus Jadwal")
-            .setMessage("Yakin ingin menghapus ${mataKuliah.nama}?")
+            .setMessage("Yakin ingin menghapus ${mataKuliah.nama_mk}?")
             .setPositiveButton("Hapus") { _, _ ->
                 val position = jadwalList.indexOf(mataKuliah)
                 jadwalList.remove(mataKuliah)
                 adapter.notifyItemRemoved(position)
                 cancelReminder(mataKuliah)
+                deleteJadwalFromServer(mataKuliah.id_jadwal)
                 Toast.makeText(this, "Jadwal dihapus", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Batal", null)
@@ -289,7 +374,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setReminder(mataKuliah: MataKuliah) {
-        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
 
         // Reminder 1: 10 menit sebelum kuliah
         setAlarmForReminder(alarmManager, mataKuliah, -10, "sebelum")
@@ -305,13 +390,13 @@ class MainActivity : AppCompatActivity() {
         type: String
     ) {
         val intent = Intent(this, ReminderReceiver::class.java).apply {
-            putExtra("MATA_KULIAH", mataKuliah.nama)
+            putExtra("MATA_KULIAH", mataKuliah.nama_mk)
             putExtra("RUANGAN", mataKuliah.ruangan)
-            putExtra("JAM", mataKuliah.jamMulai)
+            putExtra("JAM", mataKuliah.jam_mulai)
             putExtra("REMINDER_TYPE", type)
         }
 
-        val requestCode = mataKuliah.id * 10 + if (type == "sebelum") 1 else 2
+        val requestCode = mataKuliah.id_jadwal * 10 + if (type == "sebelum") 1 else 2
         val pendingIntent = PendingIntent.getBroadcast(
             this,
             requestCode,
@@ -322,7 +407,7 @@ class MainActivity : AppCompatActivity() {
         val calendar = Calendar.getInstance().apply {
             set(Calendar.DAY_OF_WEEK, getDayOfWeek(mataKuliah.hari))
 
-            val timeParts = mataKuliah.jamMulai.split(":")
+            val timeParts = mataKuliah.jam_mulai.split(":")
             val hour = timeParts[0].toInt()
             val minute = timeParts[1].toInt()
 
@@ -360,13 +445,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun cancelReminder(mataKuliah: MataKuliah) {
-        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
 
         // Cancel reminder 10 menit sebelum
         val intent1 = Intent(this, ReminderReceiver::class.java)
         val pendingIntent1 = PendingIntent.getBroadcast(
             this,
-            mataKuliah.id * 10 + 1,
+            mataKuliah.id_jadwal * 10 + 1,
             intent1,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -376,7 +461,7 @@ class MainActivity : AppCompatActivity() {
         val intent2 = Intent(this, ReminderReceiver::class.java)
         val pendingIntent2 = PendingIntent.getBroadcast(
             this,
-            mataKuliah.id * 10 + 2,
+            mataKuliah.id_jadwal * 10 + 2,
             intent2,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
